@@ -40,6 +40,7 @@ void changeSaturation(double change);
 //conversion, boosting saturation, convert back
 //split in two!!
 void saturationEqualization();
+void rgbHistogramEqualization();
 void RGB_2HSV_2RGB(double change);
 
 void CFA_to_krkb();
@@ -148,7 +149,8 @@ int main(int argc,char *argv[])
 		colormatrix();
 		CFA_to_krkb();
 		//RGB_2HSV_2RGB(1.7);
-		saturationEqualization();
+		rgbHistogramEqualization();
+		//saturationEqualization();
 		medianFilter(3);
 		//can exacerbate color banding
 		gamma(1.06);  // 1.06
@@ -1131,7 +1133,90 @@ void CFA_to_krkb(){
 	//ends here
 	printf("Finish color interpolation\n");
 }
+void rgbHistogramEqualization() {
+    unsigned int rHist[256] = {0}, gHist[256] = {0}, bHist[256] = {0};
+    unsigned int rAccu[256] = {0}, gAccu[256] = {0}, bAccu[256] = {0};
+	double normR[256], normG[256], normB[256];
+    int i, j;
 
+    // Calculate histograms for each channel
+    for(i = 0; i < 2460; i++) {
+        for(j = 0; j < 3360; j++) {
+			printf("in loop\3n");
+            rHist[(r[i][j]>255?r[i][j]:0)]++;
+            gHist[(g[i][j]>255?g[i][j]:0)]++;
+            bHist[(b[i][j]>255?b[i][j]:0)]++;
+        }
+    }
+	printf("exit loop\n");
+
+
+    // Build cumulative distribution function (CDF) for each channel
+    rAccu[0] = rHist[0];
+    gAccu[0] = gHist[0];
+    bAccu[0] = bHist[0];
+    for(i = 1; i < 256; i++) {
+        rAccu[i] = rAccu[i-1] + rHist[i];
+        gAccu[i] = gAccu[i-1] + gHist[i];
+        bAccu[i] = bAccu[i-1] + bHist[i];
+    }
+		printf("done CDF\n");
+
+    int rMin=0, gMin=0, bMin=0;
+	for (i = 0; i < 256; ++i) {
+    if (rAccu[i] != 0) {
+        rMin = rAccu[i];
+        break;
+    	}
+	}
+	for (i = 0; i < 256; ++i) {
+    if (gAccu[i] != 0) {
+        gMin = gAccu[i];
+        break;
+    	}
+	}
+	for (i = 0; i < 256; ++i) {
+    if (bAccu[i] != 0) {
+        bMin = bAccu[i];
+        break;
+    	}
+	}
+
+    double rRange = rAccu[255] - rMin;
+    double gRange = gAccu[255] - gMin;
+    double bRange = bAccu[255] - bMin;
+	printf("Range calculated\n");
+
+    for (i = 0; i < 256; i++) {
+        normR[i] = (rAccu[i] - rMin) / rRange;
+        normG[i] = (gAccu[i] - gMin) / gRange;
+        normB[i] = (bAccu[i] - bMin) / bRange;
+    }
+	int rval, gval, bval;
+
+     for (i = 0; i < 2460; i++) { // Height
+        for (j = 0; j < 3360; j++) { // Width
+            rval = ((r[i][j] > 5) ? normR[r[i][j]] * 255 : 0);
+			rval = (rval > 255) ? 255 : rval; // Clamping to 255 after computation
+			gval = ((g[i][j] > 5) ? normG[g[i][j]] * 255 : 0);
+			gval = (gval > 255) ? 255 : gval;
+			if (b[i][j] >= 0 && b[i][j]< 256) {
+				bval = ((b[i][j] > 5) ? normB[b[i][j]] * 255 : 0);
+				bval = (bval > 255) ? 255 : bval;
+			} else {
+				// Log error or handle the unexpected index
+				printf("Invalid val: %d\n", b[i][j]);
+			}
+
+            r[i][j] = rval;
+            g[i][j] = gval;
+            b[i][j] = bval;
+			printf("One loop finished\n");
+        }
+    }
+
+    printf("RGB Histogram Equalization --- OK!\n");
+}
 void saturationEqualization() //try to understand this fcn? 
 //HSV conversion, use to create saturation histogram. 
 //https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=f3beb91bdd820f1ba554338160016ce3c502ba80
